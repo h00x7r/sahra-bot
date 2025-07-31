@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 user_data = {}  # {user_id: {'gender': str, 'age': int, 'status': str, 'partner': int or None}}
 waiting_queue = []
 
-# Constants (all in Arabic)
+# Constants
 WELCOME_MSG = "👋 أهلاً في سهرة بوت! دردش مع ناس مجهولين بشكل ممتع وسري 🔥"
 PROFILE_INCOMPLETE = "يرجى إكمال ملفك الشخصي (الجنس والعمر) قبل بدء الدردشة."
 SET_GENDER_PROMPT = "اختر جنسك:"
@@ -26,7 +26,6 @@ PARTNER_LEFT = "❗ غادر الشريك الدردشة."
 EXIT_MSG = "👋 تم الخروج. ابدأ من جديد بـ /start."
 NOT_IN_CHAT = "❗ أنت لست في دردشة نشطة."
 
-# Button Texts
 BUTTON_SET_GENDER = "👤 تحديد الجنس"
 BUTTON_SET_AGE = "🎂 تحديد العمر"
 BUTTON_START_CHAT = "🚀 بدء الدردشة"
@@ -99,6 +98,11 @@ async def start(update: Update, context) -> None:
     init_user(user_id)
     await update.message.reply_text(WELCOME_MSG, reply_markup=get_main_menu())
 
+async def stats(update: Update, context):
+    user_id = update.effective_user.id
+    count = len(user_data)
+    await update.message.reply_text(f"👥 عدد الأشخاص الذين بدأوا البوت: {count}")
+
 async def button(update: Update, context) -> None:
     query = update.callback_query
     user_id = query.from_user.id
@@ -138,13 +142,11 @@ async def button(update: Update, context) -> None:
             user_data[user_id]['status'] = 'chatting'
             user_data[partner]['status'] = 'chatting'
 
-            # Get partner details
             user_gender = user_data[partner]['gender']
             user_age = user_data[partner]['age']
             partner_gender = user_data[user_id]['gender']
             partner_age = user_data[user_id]['age']
 
-            # Send info to both users
             await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
             await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
         else:
@@ -210,10 +212,11 @@ async def text_handler(update: Update, context) -> None:
         await update.message.reply_text(NOT_IN_CHAT, reply_markup=get_main_menu())
 
 def main():
-    keep_alive()  # 🔸 إبقاء السيرفر شغال
+    keep_alive()
     token = os.getenv('BOT_TOKEN')
     application = Application.builder().token(token).build()
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler("stats", stats))  # ✅ عرض عدد المستخدمين
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.run_polling()
