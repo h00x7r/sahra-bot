@@ -1,4 +1,3 @@
-
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -138,8 +137,16 @@ async def button(update: Update, context) -> None:
             user_data[partner]['partner'] = user_id
             user_data[user_id]['status'] = 'chatting'
             user_data[partner]['status'] = 'chatting'
-            await query.edit_message_text(PARTNER_FOUND, reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, PARTNER_FOUND, reply_markup=get_chat_menu())
+
+            # Get partner details
+            user_gender = user_data[partner]['gender']
+            user_age = user_data[partner]['age']
+            partner_gender = user_data[user_id]['gender']
+            partner_age = user_data[user_id]['age']
+
+            # Send info to both users
+            await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
         else:
             waiting_queue.append(user_id)
     elif data == CALLBACK_SKIP:
@@ -156,8 +163,14 @@ async def button(update: Update, context) -> None:
             user_data[partner]['partner'] = user_id
             user_data[user_id]['status'] = 'chatting'
             user_data[partner]['status'] = 'chatting'
-            await context.bot.send_message(user_id, PARTNER_FOUND, reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, PARTNER_FOUND, reply_markup=get_chat_menu())
+
+            user_gender = user_data[partner]['gender']
+            user_age = user_data[partner]['age']
+            partner_gender = user_data[user_id]['gender']
+            partner_age = user_data[user_id]['age']
+
+            await context.bot.send_message(user_id, f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
         else:
             waiting_queue.append(user_id)
             await context.bot.send_message(user_id, START_SEARCH)
