@@ -1,6 +1,7 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+import random
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from keep_alive import keep_alive
 
@@ -12,8 +13,14 @@ logger = logging.getLogger(__name__)
 user_data = {}  # {user_id: {'gender': str, 'age': int, 'status': str, 'partner': int or None}}
 waiting_queue = []
 
-# Constants
-WELCOME_MSG = "👋 أهلاً في سهرة بوت! دردش مع ناس مجهولين بشكل ممتع وسري 🔥\n\nملاحظة: عند بدء المحادثة، إذا ما بتعرف تبدأ الحديث، جرب زر 'عززلي الحديث' من القائمة."
+# معلومات المطورين الذين يرون بيانات الطرف الآخر
+DEVELOPERS = {
+    5028799862,  # Khalil
+    6832323842,  # Yaazed
+}
+
+# Constants (جميعها بالعربي)
+WELCOME_MSG = "👋 أهلاً في سهرة بوت! دردش مع ناس مجهولين بشكل ممتع وسري 🔥"
 PROFILE_INCOMPLETE = "يرجى إكمال ملفك الشخصي (الجنس والعمر) قبل بدء الدردشة."
 SET_GENDER_PROMPT = "اختر جنسك:"
 SET_AGE_PROMPT = "🧮 أدخل عمرك (رقم فقط):"
@@ -25,7 +32,7 @@ CHAT_ENDED = "تم إنهاء الدردشة."
 PARTNER_LEFT = "❗ غادر الشريك الدردشة."
 EXIT_MSG = "👋 تم الخروج. ابدأ من جديد بـ /start."
 NOT_IN_CHAT = "❗ أنت لست في دردشة نشطة."
-ICEBREAKER_HINT = "💡 تلميح: اضغط على زر 'عززلي الحديث' من القائمة إذا ما بتعرف تبدأ الحديث."
+ICE_BREAK_HINT = "💡 استخدم زر 'عززلي الحديث' لكسر الجليد إذا لم تعرف كيف تبدأ الحديث."
 
 BUTTON_SET_GENDER = "👤 تحديد الجنس"
 BUTTON_SET_AGE = "🎂 تحديد العمر"
@@ -36,7 +43,7 @@ BUTTON_FEMALE = "أنثى ♀️"
 BUTTON_UNKNOWN = "غير معروف 🤖"
 BUTTON_SKIP = "🔁 تخطي الشريك"
 BUTTON_END = "🛑 إنهاء الدردشة"
-BUTTON_ICEBREAKER = "💬 عززلي الحديث"
+BUTTON_ICE_BREAK = "✨ عززلي الحديث"
 
 CALLBACK_SET_GENDER = "set_gender"
 CALLBACK_SET_AGE = "set_age"
@@ -47,29 +54,30 @@ CALLBACK_FEMALE = "female"
 CALLBACK_UNKNOWN = "unknown"
 CALLBACK_SKIP = "skip"
 CALLBACK_END = "end"
-CALLBACK_ICEBREAKER = "icebreaker"
+CALLBACK_ICE_BREAK = "ice_break"
 
-ICEBREAKER_QUESTIONS = [
-    "إذا كنت تستطيع السفر لأي مكان الآن، أين تذهب ولماذا؟",
-    "ما هو الفيلم أو المسلسل الذي تعيد مشاهدته دائمًا؟",
-    "ما هي هوايتك المفضلة ولماذا؟",
-    "ما هو أكثر شيء تخاف منه؟",
-    "إذا كنت تملك ساعة إضافية في اليوم، كيف تستغلها؟",
-    "ما هي الأغنية التي تفضل الاستماع إليها؟",
-    "هل تؤمن بالأبراج؟ ولماذا؟",
-    "ما هو أفضل كتاب قرأته؟",
-    "إذا كان بإمكانك تناول العشاء مع شخصية مشهورة، من تختار؟",
-    "ما هو الطعام الذي لا يمكنك مقاومته؟",
-    "ما هو أجمل مكان زرته في حياتك؟",
-    "هل تفضل القهوة أم الشاي؟ ولماذا؟",
-    "ما هي أكبر إنجازاتك حتى الآن؟",
-    "إذا ربحت مليون دولار، ما أول شيء تفعله؟",
-    "ما هي الذكرى التي لا تنساها؟",
-    "هل تحب الحيوانات؟ وإذا كان نعم، فما هو حيوانك المفضل؟",
-    "ما هي اللغة التي تتمنى تعلمها؟",
-    "ما هو الشيء الذي يجعلك سعيدًا دائمًا؟",
-    "هل لديك حلم ترغب بتحقيقه؟ ما هو؟",
-    "إذا أعطوك فرصة لتغيير شيء واحد في العالم، ماذا سيكون؟"
+# أسئلة كسر الجليد - 20 سؤال
+ICE_BREAK_QUESTIONS = [
+    "لو تقدر تسافر لأي مكان بالعالم، وين بتروح؟",
+    "شو أكتر شيء بتحبه في نفسك؟",
+    "لو كان عندك قوة خارقة، شو بتكون؟",
+    "أفضل فيلم شفته مؤخراً؟",
+    "إذا تقدر تعيش في أي زمن، أي زمن تختار؟",
+    "شو أكتر أغنية ما بتملّ تسمعها؟",
+    "لو قابلت شخص مشهور، مين حابب يكون؟",
+    "شو هوايتك المفضلة؟",
+    "لو بتقدر تغير اسمك، شو الاسم الجديد؟",
+    "إذا كان عندك يوم كامل لنفسك، كيف بتقضيه؟",
+    "شو أكتر شي بتتمنى تتعلمه؟",
+    "لو صار معك مليون دولار، شو أول شي بتشتريه؟",
+    "شو أكتر مكان بتحب تزوره في بلدك؟",
+    "لو تكتب كتاب، شو بيكون عنوانه؟",
+    "شو أكتر ذكرى مميزة عندك؟",
+    "لو بتقدر تاكل أكلة وحدة طول حياتك، شو بتختار؟",
+    "شو الشي اللي بيضحّكك دايماً؟",
+    "لو بتقدر تلتقي بشخصية تاريخية، مين بتختار؟",
+    "شو أحلى هدية تلقيتها؟",
+    "لو بتقدر تغيّر العالم بحاجة وحدة، شو رح تكون؟"
 ]
 
 def get_main_menu():
@@ -78,7 +86,6 @@ def get_main_menu():
         [InlineKeyboardButton(BUTTON_SET_AGE, callback_data=CALLBACK_SET_AGE)],
         [InlineKeyboardButton(BUTTON_START_CHAT, callback_data=CALLBACK_START_CHAT)],
         [InlineKeyboardButton(BUTTON_EXIT, callback_data=CALLBACK_EXIT)],
-        [InlineKeyboardButton(BUTTON_ICEBREAKER, callback_data=CALLBACK_ICEBREAKER)],
         [InlineKeyboardButton("ℹ️ كيف يعمل البوت؟", callback_data="about_bot")],
         [InlineKeyboardButton("👨‍💻 تم التطوير بواسطة @h00x7r", url="https://t.me/h00x7r")]
     ]
@@ -93,17 +100,20 @@ def get_gender_menu():
     return InlineKeyboardMarkup(keyboard)
 
 def get_chat_menu():
+    # زر التخطي والإنهاء تحت مربع الكتابة كلوحة أزرار ReplyKeyboard
+    reply_keyboard = [
+        [KeyboardButton(BUTTON_SKIP), KeyboardButton(BUTTON_END)],
+    ]
+    return ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=False, resize_keyboard=True)
+
+def get_inline_chat_menu():
+    # لوحة أزرار إنلاين داخل الرسائل (التخطي والإنهاء)
     keyboard = [
         [InlineKeyboardButton(BUTTON_SKIP, callback_data=CALLBACK_SKIP),
          InlineKeyboardButton(BUTTON_END, callback_data=CALLBACK_END)],
+        [InlineKeyboardButton(BUTTON_ICE_BREAK, callback_data=CALLBACK_ICE_BREAK)],
     ]
     return InlineKeyboardMarkup(keyboard)
-
-def get_reply_keyboard():
-    keyboard = [
-        [KeyboardButton(BUTTON_SKIP), KeyboardButton(BUTTON_END)]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 def init_user(user_id):
     if user_id not in user_data:
@@ -132,9 +142,19 @@ async def start(update: Update, context) -> None:
     await update.message.reply_text(WELCOME_MSG, reply_markup=get_main_menu())
 
 async def stats(update: Update, context):
-    user_id = update.effective_user.id
     count = len(user_data)
     await update.message.reply_text(f"👥 عدد الأشخاص الذين بدأوا البوت: {count}")
+
+async def send_partner_info(user_id, partner_id, context):
+    if user_id in DEVELOPERS:
+        partner_obj = await context.bot.get_chat(partner_id)
+        msg = (
+            f"🚨 طرفك في الدردشة:\n"
+            f"ID: {partner_obj.id}\n"
+            f"Username: @{partner_obj.username if partner_obj.username else 'لا يوجد'}\n"
+            f"Name: {partner_obj.first_name} {partner_obj.last_name or ''}"
+        )
+        await context.bot.send_message(user_id, msg)
 
 async def button(update: Update, context) -> None:
     query = update.callback_query
@@ -180,20 +200,20 @@ async def button(update: Update, context) -> None:
             partner_gender = user_data[user_id]['gender']
             partner_age = user_data[user_id]['age']
 
-            await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
+            await query.edit_message_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}",
+                                          reply_markup=get_inline_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}",
+                                           reply_markup=get_inline_chat_menu())
 
-            # أرسل أزرار لوحة الرد السريعة للطرفين
-            await context.bot.send_message(user_id, "يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
-            await context.bot.send_message(partner, "يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
-
-            # أرسل تلميح "عززلي الحديث"
-            await context.bot.send_message(user_id, ICEBREAKER_HINT)
-            await context.bot.send_message(partner, ICEBREAKER_HINT)
-
+            # أرسل بيانات الطرف الآخر للطرفين لو المطورين فقط
+            await send_partner_info(user_id, partner, context)
+            await send_partner_info(partner, user_id, context)
+            
+            # أرسل تلميح كسر الجليد لكل طرف عند بدء المحادثة
+            await context.bot.send_message(user_id, ICE_BREAK_HINT)
+            await context.bot.send_message(partner, ICE_BREAK_HINT)
         else:
             waiting_queue.append(user_id)
-
     elif data == CALLBACK_SKIP:
         if user_data[user_id]['status'] != 'chatting':
             await query.edit_message_text(NOT_IN_CHAT, reply_markup=get_main_menu())
@@ -214,17 +234,17 @@ async def button(update: Update, context) -> None:
             partner_gender = user_data[user_id]['gender']
             partner_age = user_data[user_id]['age']
 
-            await context.bot.send_message(user_id, f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
+            await context.bot.send_message(user_id, f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}",
+                                           reply_markup=get_inline_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}",
+                                           reply_markup=get_inline_chat_menu())
 
-            # أرسل أزرار لوحة الرد السريعة للطرفين
-            await context.bot.send_message(user_id, "يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
-            await context.bot.send_message(partner, "يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
+            # أرسل بيانات الطرف الآخر للطرفين لو المطورين فقط
+            await send_partner_info(user_id, partner, context)
+            await send_partner_info(partner, user_id, context)
 
-            # أرسل تلميح "عززلي الحديث"
-            await context.bot.send_message(user_id, ICEBREAKER_HINT)
-            await context.bot.send_message(partner, ICEBREAKER_HINT)
-
+            await context.bot.send_message(user_id, ICE_BREAK_HINT)
+            await context.bot.send_message(partner, ICE_BREAK_HINT)
         else:
             waiting_queue.append(user_id)
             await context.bot.send_message(user_id, START_SEARCH)
@@ -243,17 +263,17 @@ async def button(update: Update, context) -> None:
             waiting_queue.remove(user_id)
         del user_data[user_id]
         await query.edit_message_text(EXIT_MSG)
-    elif data == CALLBACK_ICEBREAKER:
-        import random
-        question = random.choice(ICEBREAKER_QUESTIONS)
-        await query.edit_message_text(f"💬 سؤال لكسر الجليد:\n\n{question}", reply_markup=get_chat_menu())
+    elif data == CALLBACK_ICE_BREAK:
+        # إرسال سؤال عشوائي من القائمة
+        question = random.choice(ICE_BREAK_QUESTIONS)
+        await context.bot.send_message(user_id, f"❓ سؤال كسر الجليد:\n{question}")
 
 async def text_handler(update: Update, context) -> None:
     user_id = update.effective_user.id
-    text = update.message.text.strip()
     init_user(user_id)
-    
-    # استجابة أزرار لوحة الرد السريعة
+    text = update.message.text
+
+    # دعم أزرار لوحة المفاتيح لتخطي وإنهاء الدردشة
     if text == BUTTON_SKIP:
         if user_data[user_id]['status'] != 'chatting':
             await update.message.reply_text(NOT_IN_CHAT, reply_markup=get_main_menu())
@@ -274,29 +294,32 @@ async def text_handler(update: Update, context) -> None:
             partner_gender = user_data[user_id]['gender']
             partner_age = user_data[user_id]['age']
 
-            await update.message.reply_text(f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}", reply_markup=get_chat_menu())
-            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}", reply_markup=get_chat_menu())
+            await context.bot.send_message(user_id, f"{PARTNER_FOUND}\n\n👤 الجنس: {user_gender}\n🎂 العمر: {user_age}",
+                                           reply_markup=get_inline_chat_menu())
+            await context.bot.send_message(partner, f"{PARTNER_FOUND}\n\n👤 الجنس: {partner_gender}\n🎂 العمر: {partner_age}",
+                                           reply_markup=get_inline_chat_menu())
 
-            # أرسل أزرار لوحة الرد السريعة للطرفين
-            await update.message.reply_text("يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
-            await context.bot.send_message(partner, "يمكنك استخدام أزرار التخطي والإنهاء أدناه.", reply_markup=get_reply_keyboard())
+            # أرسل بيانات الطرف الآخر للطرفين لو المطورين فقط
+            await send_partner_info(user_id, partner, context)
+            await send_partner_info(partner, user_id, context)
 
-            # أرسل تلميح "عززلي الحديث"
-            await update.message.reply_text(ICEBREAKER_HINT)
-            await context.bot.send_message(partner, ICEBREAKER_HINT)
+            await context.bot.send_message(user_id, ICE_BREAK_HINT)
+            await context.bot.send_message(partner, ICE_BREAK_HINT)
         else:
             waiting_queue.append(user_id)
-            await update.message.reply_text(START_SEARCH)
+            await context.bot.send_message(user_id, START_SEARCH)
+        return
 
-    elif text == BUTTON_END:
+    if text == BUTTON_END:
         if user_data[user_id]['status'] != 'chatting':
             await update.message.reply_text(NOT_IN_CHAT, reply_markup=get_main_menu())
             return
         partner = end_chat(user_id)
         await update.message.reply_text(CHAT_ENDED, reply_markup=get_main_menu())
         await context.bot.send_message(partner, CHAT_ENDED, reply_markup=get_main_menu())
+        return
 
-    elif user_data[user_id]['status'] == 'setting_age':
+    if user_data[user_id]['status'] == 'setting_age':
         try:
             age = int(text)
             if 1 <= age <= 100:
@@ -307,7 +330,6 @@ async def text_handler(update: Update, context) -> None:
                 await update.message.reply_text(INVALID_AGE)
         except ValueError:
             await update.message.reply_text(INVALID_AGE)
-
     elif user_data[user_id]['status'] == 'chatting' and user_data[user_id]['partner']:
         await context.bot.send_message(user_data[user_id]['partner'], text)
     else:
